@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8079" doc:name="HTTP Listener Configuration"/>
+    <batch:job name="kranten_e2e_batchBatch">
+        <batch:input>
+            <db:select config-ref="Gazetten" streaming="true" doc:name="Database">
+                <db:parameterized-query><![CDATA[SELECT
+	gaz.gazet,
+	gaz.pid as krantpid,
+	filename,
+	md5,
+	case when (type_viaa = 'pdf' OR type_viaa = 'original_mets') then
+		gaz.pid || '_' || kf.type_viaa
+	else
+		gaz.pid || '_' || regexp_replace(filename, '[A-Za-z]+_[0-9]+_([0-9]+)\..+', '\1') || '_' || kf.type_viaa
+	end as filepid,
+	kf.type_viaa,
+	kf.archive_status,
+	kf.comment
+FROM
+	kerf_gazetten gaz
+JOIN
+	kerf_files kf ON kf.gazet = gaz.gazet
+WHERE
+	kf.archive_status IS NULL OR kf.archive_status = 'in_progress'
+AND
+	gaz.status = 'processing'
+AND
+	gaz.batch_id = #[flowVars.batch_id]
+ORDER BY
+	gaz.gazet;]]></db:parameterized-query>
+            </db:select>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Batch_Step">
+	           	<batch:set-record-variable variableName="file" value="#[payload]" doc:name="Set file"/>
+	            <batch:set-record-variable variableName="filepid" value="#[recordVars.file.filepid]" doc:name="Set filepid"/>
+	            <db:select config-ref="MAM" doc:name="Database">
+	                <db:parameterized-query><![CDATA[SELECT archive_status, fragment_id, is_deleted FROM sips WHERE external_id = #[recordVars.filepid];]]></db:parameterized-query>
+	            </db:select>
+	            <choice doc:name="Choice">
+	                <when expression="#[payload.size() == 1]">
+	                    <batch:set-record-variable variableName="archiveStatus" value="#[payload[0].archive_status]" doc:name="Set archiveStatus"/>
+	                    <batch:set-record-variable variableName="fragmentId" value="#[payload[0].fragment_id]" doc:name="Set fragmentId"/>
+	                    <batch:set-record-variable variableName="is_deleted" value="#[payload[0].is_deleted]" doc:name="Set is_deleted"/>
+	                    <logger message="#[recordVars.filepid] #[recordVars.archiveStatus]" level="INFO" doc:name="Logger"/>
+	                    <choice doc:name="Is deleted?">
+	                        <when expression="#[recordVars.is_deleted != 0]">
+	                            <logger message="#[recordVars.filepid] is deleted!" level="DEBUG" doc:name="Is deleted"/>
+	                            <db:update config-ref="Gazetten" doc:name="Database">
+	                                <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = 'DELETED' WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
+	                            </db:update>
+	                        </when>
+	                        <otherwise>
+                                <choice doc:name="Is in_progress or failed?">
+                                    <when expression="#[recordVars.archiveStatus == &quot;in_progress&quot;]">
+                                        <logger message="#[recordVars.filepid] is in progress!" level="DEBUG" doc:name="Is in progress"/>
+                                        <db:update config-ref="Gazetten" doc:name="Database">
+                                            <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = #[recordVars.archiveStatus] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
+                                        </db:update>
+                                    </when>
+                                    <when expression="#[recordVars.archiveStatus == &quot;failed&quot;]">
+                                        <db:select config-ref="MAM" doc:name="Set to NOK">
+                                            <db:parameterized-query><![CDATA[SELECT comment FROM premis_events WHERE fragment_id = #[recordVars.fragmentId] AND outcome = 'NOK' ORDER BY date DESC;]]></db:parameterized-query>
+                                        </db:select>
+                                        <choice doc:name="Choice">
+                                            <when expression="#[payload.size() &gt; 0]">
+                                                <batch:set-record-variable variableName="comment" value="#[payload[0].comment]" doc:name="Set comment"/>
+                                            </when>
+                                            <otherwise>
+                                                <expression-component doc:name="Do nothing"><![CDATA[// Do nothing]]></expression-component>
+                                            </otherwise>
+                                        </choice>
+                                        <db:update config-ref="Gazetten" doc:name="Database">
+                                            <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = 'failed', comment = #[recordVars.comment] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
+                                        </db:update>
+                                    </when>
+                                    <otherwise>
+                                        <db:update config-ref="Gazetten" doc:name="Database">
+                                            <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = #[recordVars.archiveStatus] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
+                                        </db:update>
+                                    </otherwise>
+                                </choice>
+	                        </otherwise>
+	                    </choice>
+	                </when>
+	                <otherwise>
+	                    <logger message="#[recordVars.filepid] was not found in MediaHaven!" level="DEBUG" doc:name="Logger"/>
+	                </otherwise>
+	            </choice>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger message="#[payload.successfulRecords] / #[payload.processedRecords] records successful!" level="INFO" doc:name="Logger"/>
+        </batch:on-complete>
+    </batch:job>
+    <flow name="kranten_e2e_batchFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/start" allowedMethods="GET" doc:name="HTTP"/>
+        <set-variable variableName="batch_id" value="#[message.inboundProperties.'http.query.params'.'batch_id']" doc:name="Set batch_id"/>
+        <batch:execute name="kranten_e2e_batchBatch" doc:name="Batch Execute"/>
+    </flow>
+</mule>
