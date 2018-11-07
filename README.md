@@ -25,3 +25,9 @@ Triggering is done by sending a HTTP GET message to
 `<ESB_SERVER>:8079/start?batch_id=kERF_003` making sure the batch_id is filled
 in correctly. This will initiate the process and return a response immediately.
 The process will take a while to run, depending on the size of the batch.
+
+### cURL example
+
+```shell
+curl -X GET '<ESB_SERVER>:8079/start?batch_id=kERF_003'
+```
