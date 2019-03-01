@@ -18,11 +18,7 @@ http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/m
 	gaz.pid as krantpid,
 	filename,
 	md5,
-	case when (type_viaa = 'pdf' OR type_viaa = 'original_mets') then
-		gaz.pid || '_' || kf.type_viaa
-	else
-		gaz.pid || '_' || regexp_replace(filename, '[A-Za-z]+_[0-9]+_([0-9]+)\..+', '\1') || '_' || kf.type_viaa
-	end as filepid,
+	replace(gaz.pid || regexp_replace(kf.filename, '[A-Za-z]*\_?\-?[0-9]*\_?([0-9]*)\..*', '_\1_') || kf.type_viaa, '__', '_') as filepid,
 	kf.type_viaa,
 	kf.archive_status,
 	kf.comment
@@ -35,7 +31,7 @@ WHERE
 AND
 	gaz.status = 'processing'
 AND
-	gaz.batch_id = #[flowVars.batch_id]
+	gaz.batch_id = 'kERF_003'
 ORDER BY
 	gaz.gazet;]]></db:parameterized-query>
             </db:select>
