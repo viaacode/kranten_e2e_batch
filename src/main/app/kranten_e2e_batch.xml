@@ -31,7 +31,7 @@ WHERE
 AND
 	gaz.status = 'processing'
 AND
-	gaz.batch_id = 'kERF_003'
+	gaz.batch_id = #[flowVars.batch_id]
 ORDER BY
 	gaz.gazet;]]></db:parameterized-query>
             </db:select>
