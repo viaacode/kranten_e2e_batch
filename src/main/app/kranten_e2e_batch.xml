@@ -48,10 +48,10 @@ ORDER BY
 	                    <batch:set-record-variable variableName="archiveStatus" value="#[payload[0].archive_status]" doc:name="Set archiveStatus"/>
 	                    <batch:set-record-variable variableName="fragmentId" value="#[payload[0].fragment_id]" doc:name="Set fragmentId"/>
 	                    <batch:set-record-variable variableName="is_deleted" value="#[payload[0].is_deleted]" doc:name="Set is_deleted"/>
-	                    <logger message="#[recordVars.filepid] #[recordVars.archiveStatus]" level="INFO" doc:name="Logger"/>
+	                    <logger message="filepid: #[recordVars.filepid] / archivestatus: #[recordVars.archiveStatus]" level="INFO" doc:name="Log: filepid / archivestatus"/>
 	                    <choice doc:name="Is deleted?">
 	                        <when expression="#[recordVars.is_deleted != 0]">
-	                            <logger message="#[recordVars.filepid] is deleted!" level="DEBUG" doc:name="Is deleted"/>
+	                            <logger message="#[recordVars.filepid] is deleted!" level="DEBUG" doc:name="Log: filepid is deleted"/>
 	                            <db:update config-ref="Gazetten" doc:name="Database">
 	                                <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = 'DELETED' WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
 	                            </db:update>
@@ -59,7 +59,7 @@ ORDER BY
 	                        <otherwise>
                                 <choice doc:name="Is in_progress or failed?">
                                     <when expression="#[recordVars.archiveStatus == &quot;in_progress&quot;]">
-                                        <logger message="#[recordVars.filepid] is in progress!" level="DEBUG" doc:name="Is in progress"/>
+                                        <logger message="#[recordVars.filepid] is in progress!" level="DEBUG" doc:name="Log: filepid in progress"/>
                                         <db:update config-ref="Gazetten" doc:name="Database">
                                             <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = #[recordVars.archiveStatus] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
                                         </db:update>
@@ -90,18 +90,19 @@ ORDER BY
 	                    </choice>
 	                </when>
 	                <otherwise>
-	                    <logger message="#[recordVars.filepid] was not found in MediaHaven!" level="DEBUG" doc:name="Logger"/>
+	                    <logger message="#[recordVars.filepid] was not found in MediaHaven!" level="DEBUG" doc:name="Log: filepid not found"/>
 	                </otherwise>
 	            </choice>
             </batch:step>
         </batch:process-records>
         <batch:on-complete>
-            <logger message="#[payload.successfulRecords] / #[payload.processedRecords] records successful!" level="INFO" doc:name="Logger"/>
+            <logger message="#[payload.successfulRecords] / #[payload.processedRecords] records successful!" level="INFO" doc:name="Log: successfulRecords / processedRecords"/>
         </batch:on-complete>
     </batch:job>
     <flow name="kranten_e2e_batchFlow">
         <http:listener config-ref="HTTP_Listener_Configuration" path="/start" allowedMethods="GET" doc:name="HTTP"/>
         <set-variable variableName="batch_id" value="#[message.inboundProperties.'http.query.params'.'batch_id']" doc:name="Set batch_id"/>
+        <logger message="Got reporting request for #[flowVars.batch_id]" level="INFO" doc:name="Log: Got reporting request for ..."/>
         <batch:execute name="kranten_e2e_batchBatch" doc:name="Batch Execute"/>
     </flow>
 </mule>
