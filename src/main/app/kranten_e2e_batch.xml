@@ -101,7 +101,7 @@ ORDER BY
     </batch:job>
     <flow name="kranten_e2e_batchFlow">
         <http:listener config-ref="HTTP_Listener_Configuration" path="/start" allowedMethods="GET" doc:name="HTTP"/>
-        <set-variable variableName="batch_id" value="#[message.inboundProperties.'http.query.params'.'batch_id']" doc:name="Set batch_id"/>
+        <set-variable variableName="batch_id" value="#[message.inboundProperties['http.query.params']['batch_id']]" doc:name="Set batch_id"/>
         <logger message="Got reporting request for #[flowVars.batch_id]" level="INFO" doc:name="Log: Got reporting request for ..."/>
         <batch:execute name="kranten_e2e_batchBatch" doc:name="Batch Execute"/>
     </flow>
