@@ -30,9 +30,9 @@ FROM
 JOIN
 	kerf_files kf ON kf.gazet = gaz.gazet
 WHERE
-	kf.archive_status IS NULL OR kf.archive_status = 'in_progress'
+	kf.archive_status NOT IN ('on_tape', 'on_disk')
 AND
-	gaz.status NOT IN ('on_tape', 'on_disk')
+	gaz.status = 'processing'
 AND
 	gaz.batch_id = #[flowVars.batch_id]
 ORDER BY
@@ -158,7 +158,7 @@ ORDER BY
         <http:listener config-ref="HTTP_Listener_Configuration" path="/start" allowedMethods="GET" doc:name="HTTP"/>
         <set-variable variableName="batch_id" value="#[message.inboundProperties['http.query.params']['batch_id']]" doc:name="Set batch_id"/>
         <set-variable variableName="retry_nok" value="#[message.inboundProperties['http.query.params']['retry_nok'] == null ? false : true]" doc:name="Set retry_nok"/>
-        <logger message="Got reporting request for #[flowVars.batch_id]" level="INFO" doc:name="Log: Got reporting request for ..."/>
+        <logger message="Got reporting request for #[flowVars.batch_id]. Retrying NOK files: #[flowVars.retry_nok]" level="INFO" doc:name="Log: Got reporting request for ..."/>
         <batch:execute name="kranten_e2e_batchBatch" doc:name="Batch Execute"/>
     </flow>
 </mule>
