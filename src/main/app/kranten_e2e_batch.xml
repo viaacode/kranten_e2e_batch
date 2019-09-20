@@ -108,7 +108,7 @@ ORDER BY
                         <logger message="#[recordVars.filepid] was not found in MediaHaven!" level="DEBUG" doc:name="Log: filepid not found"/>
                         <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
 	                        <db:select config-ref="MAM" doc:name="Database">
-	                            <db:parameterized-query><![CDATA[SELECT comment FROM premis_events WHERE fragment_id = (SELECT fragment_id FROM sips WHERE external_id = #[recordVars.krantpid]) AND outcome = 'NOK';]]></db:parameterized-query>
+                                <db:parameterized-query><![CDATA[SELECT comment FROM premis_events WHERE fragment_id = (SELECT fragment_id FROM sips WHERE external_id = #[recordVars.krantpid]) AND outcome = 'NOK' AND comment != "" AND comment IS NOT NULL ORDER BY date DESC;]]></db:parameterized-query>
 	                        </db:select>
                         </until-successful>
                         <batch:set-record-variable variableName="comment" value="#[payload.size() &gt; 0 ? payload[0].comment : null]" doc:name="Set comment"/>
