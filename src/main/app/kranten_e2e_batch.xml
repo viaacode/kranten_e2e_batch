@@ -140,7 +140,14 @@ ORDER BY
                                 <db:parameterized-query><![CDATA[SELECT comment FROM premis_events WHERE fragment_id = (SELECT fragment_id FROM sips WHERE external_id = #[recordVars.krantpid]) AND outcome = 'NOK' AND comment IS NOT NULL ORDER BY date DESC;]]></db:parameterized-query>
 	                        </db:select>
                         </until-successful>
-                        <batch:set-record-variable variableName="comment" value="#[payload.size() &gt; 0 ? payload[0].comment : null]" doc:name="Set comment"/>
+                        <choice doc:name="Choice">
+                            <when expression="#[payload.size() &gt; 0]">
+                                <batch:set-record-variable variableName="comment" value="#[payload[0].comment]" doc:name="Set comment"/>
+                            </when>
+                            <otherwise>
+                                <logger message="Comment was not found on premis_event for #[recordVars.filepid]. Not setting the variable." level="DEBUG" doc:name="Comment was not found on premis_event for filepid. Not setting the variable."/>
+                            </otherwise>
+                        </choice>
                         <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
 	                        <db:update config-ref="Gazetten" doc:name="Database">
 	                            <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = #[recordVars.comment != null ? 'FAILED' : 'FILE_NOT_FOUND'], comment = #[recordVars.comment != null ? recordVars.comment : null] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
