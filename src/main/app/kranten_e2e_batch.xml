@@ -10,10 +10,11 @@ http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/ba
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
 http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
     <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8079" doc:name="HTTP Listener Configuration"/>
-    <batch:job name="kranten_e2e_batchBatch">
+    <batch:job name="kranten_e2e_batchBatch" max-failed-records="-1">
         <batch:input>
-            <db:select config-ref="Gazetten" streaming="true" doc:name="Database">
-                <db:parameterized-query><![CDATA[SELECT
+            <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
+                <db:select config-ref="Gazetten" streaming="true" doc:name="Database">
+                    <db:parameterized-query><![CDATA[SELECT
 	gaz.gazet,
 	gaz.pid as krantpid,
 	filename,
@@ -34,40 +35,50 @@ AND
 	gaz.batch_id = #[flowVars.batch_id]
 ORDER BY
 	gaz.gazet;]]></db:parameterized-query>
-            </db:select>
+                </db:select>
+            </until-successful>
         </batch:input>
         <batch:process-records>
-            <batch:step name="Batch_Step">
+            <batch:step name="Batch_Step" accept-policy="ALL">
+                <batch:set-record-variable variableName="krantpid" value="#[payload.krantpid]" doc:name="Set krantpid"/>
 	           	<batch:set-record-variable variableName="file" value="#[payload]" doc:name="Set file"/>
 	            <batch:set-record-variable variableName="filepid" value="#[recordVars.file.filepid]" doc:name="Set filepid"/>
-	            <db:select config-ref="MAM" doc:name="Database">
-	                <db:parameterized-query><![CDATA[SELECT archive_status, fragment_id, is_deleted FROM sips WHERE external_id = #[recordVars.filepid];]]></db:parameterized-query>
-	            </db:select>
-	            <choice doc:name="Choice">
-	                <when expression="#[payload.size() == 1]">
-	                    <batch:set-record-variable variableName="archiveStatus" value="#[payload[0].archive_status]" doc:name="Set archiveStatus"/>
-	                    <batch:set-record-variable variableName="fragmentId" value="#[payload[0].fragment_id]" doc:name="Set fragmentId"/>
-	                    <batch:set-record-variable variableName="is_deleted" value="#[payload[0].is_deleted]" doc:name="Set is_deleted"/>
-	                    <logger message="filepid: #[recordVars.filepid] / archivestatus: #[recordVars.archiveStatus]" level="INFO" doc:name="Log: filepid / archivestatus"/>
-	                    <choice doc:name="Is deleted?">
-	                        <when expression="#[recordVars.is_deleted != 0]">
-	                            <logger message="#[recordVars.filepid] is deleted!" level="DEBUG" doc:name="Log: filepid is deleted"/>
-	                            <db:update config-ref="Gazetten" doc:name="Database">
-	                                <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = 'DELETED' WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
-	                            </db:update>
-	                        </when>
-	                        <otherwise>
+	            <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
+	                <db:select config-ref="MAM" doc:name="Database">
+	                    <db:parameterized-query><![CDATA[SELECT archive_status, fragment_id, is_deleted FROM sips WHERE external_id = #[recordVars.filepid];]]></db:parameterized-query>
+	                </db:select>
+                </until-successful>
+                <choice doc:name="Choice">
+                    <when expression="#[payload.size() == 1]">
+                        <batch:set-record-variable variableName="archiveStatus" value="#[payload[0].archive_status]" doc:name="Set archiveStatus"/>
+                        <batch:set-record-variable variableName="fragmentId" value="#[payload[0].fragment_id]" doc:name="Set fragmentId"/>
+                        <batch:set-record-variable variableName="is_deleted" value="#[payload[0].is_deleted]" doc:name="Set is_deleted"/>
+                        <logger message="filepid: #[recordVars.filepid] / archivestatus: #[recordVars.archiveStatus]" level="INFO" doc:name="Log: filepid / archivestatus"/>
+                        <choice doc:name="Is deleted?">
+                            <when expression="#[recordVars.is_deleted != 0]">
+                                <logger message="#[recordVars.filepid] is deleted!" level="DEBUG" doc:name="Log: filepid is deleted"/>
+                                <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
+	                                <db:update config-ref="Gazetten" doc:name="Database">
+	                                    <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = 'DELETED' WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
+	                                </db:update>
+                                </until-successful>
+                            </when>
+                            <otherwise>
                                 <choice doc:name="Is in_progress or failed?">
                                     <when expression="#[recordVars.archiveStatus == &quot;in_progress&quot;]">
                                         <logger message="#[recordVars.filepid] is in progress!" level="DEBUG" doc:name="Log: filepid in progress"/>
-                                        <db:update config-ref="Gazetten" doc:name="Database">
-                                            <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = #[recordVars.archiveStatus] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
-                                        </db:update>
+                                        <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
+	                                        <db:update config-ref="Gazetten" doc:name="Database">
+	                                            <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = #[recordVars.archiveStatus] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
+	                                        </db:update>
+                                        </until-successful>
                                     </when>
                                     <when expression="#[recordVars.archiveStatus == &quot;failed&quot;]">
-                                        <db:select config-ref="MAM" doc:name="Set to NOK">
-                                            <db:parameterized-query><![CDATA[SELECT comment FROM premis_events WHERE fragment_id = #[recordVars.fragmentId] AND outcome = 'NOK' ORDER BY date DESC;]]></db:parameterized-query>
-                                        </db:select>
+                                        <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
+	                                        <db:select config-ref="MAM" doc:name="Set to NOK">
+	                                            <db:parameterized-query><![CDATA[SELECT comment FROM premis_events WHERE fragment_id = #[recordVars.fragmentId] AND outcome = 'NOK' ORDER BY date DESC;]]></db:parameterized-query>
+	                                        </db:select>
+                                        </until-successful>
                                         <choice doc:name="Choice">
                                             <when expression="#[payload.size() &gt; 0]">
                                                 <batch:set-record-variable variableName="comment" value="#[payload[0].comment]" doc:name="Set comment"/>
@@ -76,23 +87,38 @@ ORDER BY
                                                 <expression-component doc:name="Do nothing"><![CDATA[// Do nothing]]></expression-component>
                                             </otherwise>
                                         </choice>
-                                        <db:update config-ref="Gazetten" doc:name="Database">
-                                            <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = 'failed', comment = #[recordVars.comment] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
-                                        </db:update>
+                                        <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
+	                                        <db:update config-ref="Gazetten" doc:name="Database">
+	                                            <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = 'failed', comment = #[recordVars.comment] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
+	                                        </db:update>
+                                        </until-successful>
                                     </when>
                                     <otherwise>
-                                        <db:update config-ref="Gazetten" doc:name="Database">
-                                            <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = #[recordVars.archiveStatus] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
-                                        </db:update>
+                                        <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
+	                                        <db:update config-ref="Gazetten" doc:name="Database">
+	                                            <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = #[recordVars.archiveStatus] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
+	                                        </db:update>
+                                        </until-successful>
                                     </otherwise>
                                 </choice>
-	                        </otherwise>
-	                    </choice>
-	                </when>
-	                <otherwise>
-	                    <logger message="#[recordVars.filepid] was not found in MediaHaven!" level="DEBUG" doc:name="Log: filepid not found"/>
-	                </otherwise>
-	            </choice>
+                            </otherwise>
+                        </choice>
+                    </when>
+                    <otherwise>
+                        <logger message="#[recordVars.filepid] was not found in MediaHaven!" level="DEBUG" doc:name="Log: filepid not found"/>
+                        <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
+	                        <db:select config-ref="MAM" doc:name="Database">
+	                            <db:parameterized-query><![CDATA[SELECT comment FROM premis_events WHERE fragment_id = (SELECT fragment_id FROM sips WHERE external_id = #[recordVars.krantpid]) AND outcome = 'NOK';]]></db:parameterized-query>
+	                        </db:select>
+                        </until-successful>
+                        <batch:set-record-variable variableName="comment" value="#[payload.size() &gt; 0 ? payload[0].comment : null]" doc:name="Set comment"/>
+                        <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
+	                        <db:update config-ref="Gazetten" doc:name="Database">
+	                            <db:parameterized-query><![CDATA[UPDATE kerf_files SET archive_status = #[recordVars.comment != null ? 'FAILED' : 'FILE_NOT_FOUND'], comment = #[recordVars.comment != null ? recordVars.comment : null] WHERE filename = #[recordVars.file.filename] AND gazet = #[recordVars.file.gazet];]]></db:parameterized-query>
+	                        </db:update>
+                        </until-successful>
+                    </otherwise>
+                </choice>
             </batch:step>
         </batch:process-records>
         <batch:on-complete>
