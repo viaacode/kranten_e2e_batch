@@ -13,8 +13,35 @@ http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/m
     <batch:job name="kranten_e2e_batchBatch" max-failed-records="-1">
         <batch:input>
             <until-successful maxRetries="10" millisBetweenRetries="500" synchronous="true" doc:name="Until Successful">
-                <db:select config-ref="Gazetten" streaming="true" doc:name="Database">
-                    <db:parameterized-query><![CDATA[SELECT
+                <choice doc:name="Choice">
+                    <when expression="#[flowVars[&quot;retry_nok&quot;]]">
+                        <db:select config-ref="Gazetten" streaming="true" doc:name="Database">
+                            <db:parameterized-query><![CDATA[SELECT
+	gaz.gazet,
+	gaz.pid as krantpid,
+	filename,
+	md5,
+	replace(gaz.pid || regexp_replace(kf.filename, '[A-Za-z]*\_?\-?[0-9]*\_?([0-9]*)\..*', '_\1_') || kf.type_viaa, '__', '_') as filepid,
+	kf.type_viaa,
+	kf.archive_status,
+	kf.comment
+FROM
+	kerf_gazetten gaz
+JOIN
+	kerf_files kf ON kf.gazet = gaz.gazet
+WHERE
+	kf.archive_status IS NULL OR kf.archive_status = 'in_progress'
+AND
+	gaz.status NOT IN ('on_tape', 'on_disk')
+AND
+	gaz.batch_id = #[flowVars.batch_id]
+ORDER BY
+	gaz.gazet;]]></db:parameterized-query>
+                        </db:select>
+                    </when>
+                    <otherwise>
+                        <db:select config-ref="Gazetten" streaming="true" doc:name="Database">
+                            <db:parameterized-query><![CDATA[SELECT
 	gaz.gazet,
 	gaz.pid as krantpid,
 	filename,
@@ -35,7 +62,9 @@ AND
 	gaz.batch_id = #[flowVars.batch_id]
 ORDER BY
 	gaz.gazet;]]></db:parameterized-query>
-                </db:select>
+                        </db:select>
+                    </otherwise>
+                </choice>
             </until-successful>
         </batch:input>
         <batch:process-records>
@@ -128,6 +157,7 @@ ORDER BY
     <flow name="kranten_e2e_batchFlow">
         <http:listener config-ref="HTTP_Listener_Configuration" path="/start" allowedMethods="GET" doc:name="HTTP"/>
         <set-variable variableName="batch_id" value="#[message.inboundProperties['http.query.params']['batch_id']]" doc:name="Set batch_id"/>
+        <set-variable variableName="retry_nok" value="#[message.inboundProperties['http.query.params']['retry_nok'] == null ? false : true]" doc:name="Set retry_nok"/>
         <logger message="Got reporting request for #[flowVars.batch_id]" level="INFO" doc:name="Log: Got reporting request for ..."/>
         <batch:execute name="kranten_e2e_batchBatch" doc:name="Batch Execute"/>
     </flow>

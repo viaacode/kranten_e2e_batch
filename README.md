@@ -26,6 +26,9 @@ Triggering is done by sending a HTTP GET message to
 in correctly. This will initiate the process and return a response immediately.
 The process will take a while to run, depending on the size of the batch.
 
+### Retrying 'NOK' files
+You can send an additional parameter: `retry_nok` in order to have the batch re-check the files that are not of status `on_tape` or `on_disk`. The value of the parameter doesn't matter, if it's sent with the call, retrying NOK files will be set to `true`.
+
 ### cURL example
 
 ```shell
